@@ -10,6 +10,8 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 
 MARKUPS = []
+IMAGE_INDEX = 0
+
 
 def check_lists_for_mismatch(lst_1: list, lst_2: list) -> None:
     lst_1 = [re.sub(r"(pm|ym)", "", str(x)) for x in lst_1]
@@ -69,9 +71,14 @@ def images_collector(path_to_folder: Path) -> (list[str], list[str]):
 
 
 def open_image(image: str) -> np.ndarray:
+
     img = cv2.imread(image)
 
-    return img
+    if img is None:
+        logging.info("can't load image")
+
+    else:
+        return img
 
 
 def create_folders(path_to_save: Path) -> None:
@@ -88,7 +95,6 @@ def create_folders(path_to_save: Path) -> None:
 
 
 def update_showing_img(img: np.ndarray, wind_name: str, marks: list[tuple[int, int]]):
-
     for mark in marks:
         img = cv2.circle(
             img, (mark[0], mark[1]), radius=2, color=(0, 0, 255), thickness=5
@@ -110,7 +116,7 @@ def click_ivent(event, x, y, flags, params):
 
 
 def markup_images(path_to_folder: Path, save_path: Path) -> None:
-
+    global IMAGE_INDEX
     print("-------------------------")
     print("q - exit program")
     print("s - save sample with markups and load next image")
@@ -121,83 +127,130 @@ def markup_images(path_to_folder: Path, save_path: Path) -> None:
 
     image_paths_mark, images_paths_clean = images_collector(path_to_folder)
 
+    if not (image_paths_mark and images_paths_clean):
+        logging.info("lists is empty")
+        return
+
+    path_clean = images_paths_clean[IMAGE_INDEX]
+
+    img_mark = cv2.imread(image_paths_mark[IMAGE_INDEX])
+    img_clean = cv2.imread(path_clean)
+
     if not save_path.exists():
         create_folders(save_path)
 
-    for path_mark, path_clean in zip(image_paths_mark, images_paths_clean):
-        img_mark = open_image(str(path_mark))
-        img_clean = open_image(str(path_clean))
+    img_clean_save_path = save_path / "images" / path_clean.name
+    img_label_save_path = (
+        save_path / "labels" / (path_clean.name.replace(".png", ".txt"))
+    )
 
-        img_clean_save_path = save_path / "images" / path_clean.name
-        img_label_save_path = (
-            save_path / "labels" / (path_clean.name.replace(".png", ".txt"))
-        )
+    cv2.namedWindow(f"with_marks", cv2.WINDOW_NORMAL)
+    cv2.namedWindow(f"clean_image", cv2.WINDOW_NORMAL)
 
-        cv2.namedWindow(f"with_marks", cv2.WINDOW_NORMAL)
-        cv2.namedWindow(f"clean_image", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(f"with_marks", (800, 600))
+    cv2.resizeWindow(f"clean_image", (800, 600))
 
-        cv2.resizeWindow(f"with_marks", (800, 600))
-        cv2.resizeWindow(f"clean_image", (800, 600))
+    # for path_mark, path_clean in zip(image_paths_mark, images_paths_clean):
+    cv2.imshow(f"with_marks", img_mark)
+    cv2.imshow(f"clean_image", img_clean)
 
-        if (img_mark is None) or (img_clean is None):
-            logging.info(
-                f"Error: Could not load image from {path_mark} or {path_clean}"
-            )
-        else:
-            logging.info(f"load image from path: {path_mark} and {path_clean}")
+    cv2.setMouseCallback(
+        f"with_marks", click_ivent, param=("clean_image", img_clean.copy())
+    )
 
-        cv2.imshow(f"with_marks", img_mark)
-        cv2.imshow(f"clean_image", img_clean)
+    while True:
+        key = cv2.waitKey(0) & 0xFF
 
-        cv2.setMouseCallback(
-            f"with_marks", click_ivent, param=("clean_image", img_clean.copy())
-        )
+        if key == ord("q"):
+            logging.info(f"exit program")
+            cv2.destroyAllWindows()
+            return
+        elif key == ord("Q"):
+            if IMAGE_INDEX == 0:
+                logging.info("can't minus 0 index")
+            else:
+                IMAGE_INDEX -= 1
+                img_mark, img_clean = load_image(
+                    image_paths_mark[IMAGE_INDEX],
+                    images_paths_clean[IMAGE_INDEX],
+                    img_mark,
+                    img_clean,
+                )
+                cv2.imshow(f"with_marks", img_mark)
+                cv2.imshow(f"clean_image", img_clean)
 
-        while True:
+        elif key == ord("S"):
+            if IMAGE_INDEX >= len(image_paths_mark) - 1:
+                logging.info("can't sum, max index")
+            else:
+                IMAGE_INDEX += 1
 
-            key = cv2.waitKey(0) & 0xFF
+                img_mark, img_clean = load_image(
+                    image_paths_mark[IMAGE_INDEX],
+                    images_paths_clean[IMAGE_INDEX],
+                    img_mark,
+                    img_clean,
+                )
 
-            if  key == ord("q"):
-                logging.info(f"exit program")
-                cv2.destroyAllWindows()
-                return
+                cv2.imshow(f"with_marks", img_mark)
+                cv2.imshow(f"clean_image", img_clean)
 
-            elif key == ord("s"):
-                if not MARKUPS or (len(MARKUPS) != 4):
-                    logging.error("The list with labels is empty or contains an invalid number of elements")
+        elif key == ord("s"):
+            if not MARKUPS or (len(MARKUPS) != 4):
+                logging.error(
+                    "The list with labels is empty or contains an invalid number of elements"
+                )
 
-                else:
-                    logging.info(
-                        f"save image with label to {img_clean_save_path.parent.parent}"
-                    )
-                    cv2.imwrite(img_clean_save_path, img_clean)
+            else:
+                logging.info(
+                    f"save image with label to {img_clean_save_path.parent.parent}"
+                )
+                cv2.imwrite(img_clean_save_path, img_clean)
 
-                    marks_to_save = " ".join([str(x) for x in MARKUPS])
-                    with open(img_label_save_path, "w") as f:
-                        f.write(marks_to_save)
+                marks_to_save = " ".join([str(x) for x in MARKUPS])
+                with open(img_label_save_path, "w") as f:
+                    f.write(marks_to_save)
 
-                    MARKUPS.clear()
-                    break
-
-            elif key == ord("u"):
-                display_image = img_clean.copy()
-                logging.info(f"update image with markups")
-                update_showing_img(display_image, f"clean_image", MARKUPS)
-
-            elif key == ord("d"):
-                if MARKUPS:
-                    display_image = img_clean.copy()
-                    logging.info(f"remove last item from {MARKUPS}")
-                    MARKUPS.pop(-1)
-                    logging.info(f"new markups list: {MARKUPS}")
-
-                    update_showing_img(display_image, f"clean_image", MARKUPS)
-                else:
-                    logging.info("MARKUPS is clear")
-
-            elif key == ord("n"):
                 MARKUPS.clear()
                 break
+
+        elif key == ord("u"):
+            display_image = img_clean.copy()
+            logging.info(f"update image with markups")
+            update_showing_img(display_image, f"clean_image", MARKUPS)
+
+        elif key == ord("d"):
+            if MARKUPS:
+                display_image = img_clean.copy()
+                logging.info(f"remove last item from {MARKUPS}")
+                MARKUPS.pop(-1)
+                logging.info(f"new markups list: {MARKUPS}")
+
+                update_showing_img(display_image, f"clean_image", MARKUPS)
+            else:
+                logging.info("MARKUPS is clear")
+
+        elif key == ord("n"):
+            MARKUPS.clear()
+            break
+
+
+def load_image(
+    path_mark: Path, path_clean: Path, mark_old: np.ndarray, clean_old: np.ndarray
+):
+
+    img_mark = open_image(str(path_mark))
+    img_clean = open_image(str(path_clean))
+
+
+    if (img_mark is None) or (img_clean is None):
+        logging.info(f"Error: Could not load image from {path_mark} or {path_clean}")
+        return mark_old, clean_old
+
+    else:
+        logging.info(f"load image from path: {path_mark} and {path_clean}")
+
+        return img_mark, img_clean
 
 
 if __name__ == "__main__":
