@@ -149,8 +149,7 @@ def markup_images(path_to_folder: Path, save_path: Path) -> None:
 
     cv2.resizeWindow(f"with_marks", (800, 600))
     cv2.resizeWindow(f"clean_image", (800, 600))
-
-    # for path_mark, path_clean in zip(image_paths_mark, images_paths_clean):
+    
     cv2.imshow(f"with_marks", img_mark)
     cv2.imshow(f"clean_image", img_clean)
 
