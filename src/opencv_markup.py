@@ -1,16 +1,19 @@
-import cv2
-import os
-from pathlib import Path
-import numpy as np
 import logging
+import os
 import re
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 
+MARKUPS = []
 
 def check_lists_for_mismatch(lst_1: list, lst_2: list) -> None:
-    lst_1 = [re.sub(r"(pm|ym)", "", x) for x in lst_1]
-    lst_2 = [re.sub(r"(pw|yw)", "", x) for x in lst_2]
+    lst_1 = [re.sub(r"(pm|ym)", "", str(x)) for x in lst_1]
+    lst_2 = [re.sub(r"(pw|yw)", "", str(x)) for x in lst_2]
 
     unique_elements_list = list(set(lst_1) ^ set(lst_2))
 
@@ -50,8 +53,8 @@ def images_collector(path_to_folder: Path) -> (list[str], list[str]):
             elif image.name.startswith(("image_pw", "image_yw")):
                 images_clean_list.append(image)
 
-    images_mark_list = sorted([str(x) for x in images_mark_list])
-    images_clean_list = sorted([str(x) for x in images_clean_list])
+    images_mark_list = sorted([x for x in images_mark_list])
+    images_clean_list = sorted([x for x in images_clean_list])
 
     check_lists_for_mismatch(images_mark_list, images_clean_list)
 
@@ -84,31 +87,117 @@ def create_folders(path_to_save: Path) -> None:
     logging.info(f"Create dir: {str(main_path)} and sub dirs: {sub_dir1} & {sub_dir2}")
 
 
+def update_showing_img(img: np.ndarray, wind_name: str, marks: list[tuple[int, int]]):
+
+    for mark in marks:
+        img = cv2.circle(
+            img, (mark[0], mark[1]), radius=2, color=(0, 0, 255), thickness=5
+        )
+
+    cv2.imshow(wind_name, img)
+
+
+def click_ivent(event, x, y, flags, params):
+    image = params[1].copy()
+    win_name = params[0]
+    if event == cv2.EVENT_LBUTTONDOWN:
+        print(x, " ", y)
+
+        MARKUPS.append((x, y))
+        print(MARKUPS)
+
+        update_showing_img(image, win_name, MARKUPS)
+
+
 def markup_images(path_to_folder: Path, save_path: Path) -> None:
-    image_paths_mark, images_clean = images_collector(path_to_folder)
-    print(image_paths_mark[0])
-    print(images_clean[0])
+
+    print("-------------------------")
+    print("q - exit program")
+    print("s - save sample with markups and load next image")
+    print("u - update markups on clean image")
+    print("d - delete last markup")
+    print("n - next photo")
+    print("-------------------------")
+
+    image_paths_mark, images_paths_clean = images_collector(path_to_folder)
 
     if not save_path.exists():
         create_folders(save_path)
 
-    for path in image_paths_mark:
-        markups = []
-        img = open_image(path)
+    for path_mark, path_clean in zip(image_paths_mark, images_paths_clean):
+        img_mark = open_image(str(path_mark))
+        img_clean = open_image(str(path_clean))
 
-        if img is None:
-            logging.info(f"Error: Could not load image from {path}")
+        img_clean_save_path = save_path / "images" / path_clean.name
+        img_label_save_path = (
+            save_path / "labels" / (path_clean.name.replace(".png", ".txt"))
+        )
+
+        cv2.namedWindow(f"with_marks", cv2.WINDOW_NORMAL)
+        cv2.namedWindow(f"clean_image", cv2.WINDOW_NORMAL)
+
+        cv2.resizeWindow(f"with_marks", (800, 600))
+        cv2.resizeWindow(f"clean_image", (800, 600))
+
+        if (img_mark is None) or (img_clean is None):
+            logging.info(
+                f"Error: Could not load image from {path_mark} or {path_clean}"
+            )
         else:
-            logging.info(f"load image from path: {path}")
+            logging.info(f"load image from path: {path_mark} and {path_clean}")
 
-        cv2.imshow(f"{path}", img)
+        cv2.imshow(f"with_marks", img_mark)
+        cv2.imshow(f"clean_image", img_clean)
 
-        if cv2.waitKey(0) & 0xFF == ord("q"):
-            cv2.destroyAllWindows()
-            break
+        cv2.setMouseCallback(
+            f"with_marks", click_ivent, param=("clean_image", img_clean.copy())
+        )
 
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        while True:
+
+            key = cv2.waitKey(0) & 0xFF
+
+            if  key == ord("q"):
+                logging.info(f"exit program")
+                cv2.destroyAllWindows()
+                return
+
+            elif key == ord("s"):
+                if not MARKUPS or (len(MARKUPS) != 4):
+                    logging.error("The list with labels is empty or contains an invalid number of elements")
+
+                else:
+                    logging.info(
+                        f"save image with label to {img_clean_save_path.parent.parent}"
+                    )
+                    cv2.imwrite(img_clean_save_path, img_clean)
+
+                    marks_to_save = " ".join([str(x) for x in MARKUPS])
+                    with open(img_label_save_path, "w") as f:
+                        f.write(marks_to_save)
+
+                    MARKUPS.clear()
+                    break
+
+            elif key == ord("u"):
+                display_image = img_clean.copy()
+                logging.info(f"update image with markups")
+                update_showing_img(display_image, f"clean_image", MARKUPS)
+
+            elif key == ord("d"):
+                if MARKUPS:
+                    display_image = img_clean.copy()
+                    logging.info(f"remove last item from {MARKUPS}")
+                    MARKUPS.pop(-1)
+                    logging.info(f"new markups list: {MARKUPS}")
+
+                    update_showing_img(display_image, f"clean_image", MARKUPS)
+                else:
+                    logging.info("MARKUPS is clear")
+
+            elif key == ord("n"):
+                MARKUPS.clear()
+                break
 
 
 if __name__ == "__main__":
