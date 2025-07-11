@@ -107,10 +107,10 @@ def click_ivent(event, x, y, flags, params):
     image = params[1].copy()
     win_name = params[0]
     if event == cv2.EVENT_LBUTTONDOWN:
-        print(x, " ", y)
+        logging.debug(x, " ", y)
 
         MARKUPS.append((x, y))
-        print(MARKUPS)
+        logging.debug(MARKUPS)
 
         update_showing_img(image, win_name, MARKUPS)
 
@@ -167,7 +167,7 @@ def markup_images(path_to_folder: Path, save_path: Path) -> None:
             return
         elif key == ord("Q"):
             if IMAGE_INDEX == 0:
-                logging.info("can't minus 0 index")
+                logging.info("can't minus, index is 0")
             else:
                 IMAGE_INDEX -= 1
                 img_mark, img_clean = load_image(
@@ -181,7 +181,7 @@ def markup_images(path_to_folder: Path, save_path: Path) -> None:
 
         elif key == ord("S"):
             if IMAGE_INDEX >= len(image_paths_mark) - 1:
-                logging.info("can't sum, max index")
+                logging.info("can't sum, index is max")
             else:
                 IMAGE_INDEX += 1
 
